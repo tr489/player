@@ -3,61 +3,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mein M3U IPTV Player</title>
+    <title>High Quality IPTV Player</title>
     <style>
+        /* --- DESIGN (CSS) --- */
         body {
-            font-family: Arial, sans-serif;
-            background-color: #1a1a1a;
-            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
             margin: 0;
             display: flex;
             height: 100vh;
             overflow: hidden;
         }
 
-        /* Layout: Links Player, Rechts Liste */
+        /* Linker Bereich: Player */
         #main-content {
             flex: 3;
             display: flex;
             flex-direction: column;
             padding: 20px;
-            justify-content: center;
+            background-color: #000;
             align-items: center;
+            justify-content: center;
+            position: relative;
         }
 
+        /* Rechter Bereich: Senderliste */
         #sidebar {
             flex: 1;
-            background-color: #2a2a2a;
-            border-left: 1px solid #444;
+            background-color: #1e1e1e;
+            border-left: 1px solid #333;
             display: flex;
             flex-direction: column;
             min-width: 250px;
             max-width: 400px;
         }
 
-        /* Player Styles */
+        /* Video Styles */
         video {
             width: 100%;
-            max-width: 900px;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            max-height: 80vh;
             background-color: black;
+            outline: none;
         }
 
-        /* Controls Styles */
-        .controls {
+        /* Kontrollleiste unten */
+        .controls-bar {
             width: 100%;
-            max-width: 900px;
-            margin-top: 20px;
             display: flex;
             gap: 10px;
+            padding: 10px;
+            background-color: #1e1e1e;
+            align-items: center;
         }
 
         input {
             flex-grow: 1;
             padding: 10px;
+            background-color: #333;
+            border: 1px solid #444;
+            color: white;
             border-radius: 4px;
-            border: none;
+        }
+
+        select {
+            padding: 10px;
+            background-color: #333;
+            border: 1px solid #444;
+            color: white;
+            border-radius: 4px;
+            display: none; /* Erst anzeigen, wenn Video läuft */
         }
 
         button {
@@ -74,29 +89,28 @@
         /* Senderliste Styles */
         #channel-list {
             flex-grow: 1;
-            overflow-y: auto; /* Scrollbar wenn Liste lang ist */
-            padding: 10px;
+            overflow-y: auto;
         }
-
+        .channel-header { padding: 15px; font-size: 1.1em; font-weight: bold; border-bottom: 1px solid #333; background-color: #252525; }
         .channel-btn {
-            display: block;
             width: 100%;
-            padding: 10px;
-            margin-bottom: 5px;
-            background-color: #333;
-            color: #ddd;
+            padding: 12px 15px;
+            background: none;
             border: none;
+            border-bottom: 1px solid #2a2a2a;
+            color: #ccc;
             text-align: left;
             cursor: pointer;
-            border-radius: 4px;
+            transition: background 0.2s;
         }
-        .channel-btn:hover { background-color: #444; }
-        .channel-header { padding: 15px; font-size: 1.2em; border-bottom: 1px solid #444; }
+        .channel-btn:hover { background-color: #333; color: white; }
+        .active-channel { background-color: #007bff !important; color: white; }
 
-        /* Mobile Anpassung */
+        /* Mobile */
         @media (max-width: 768px) {
-            body { flex-direction: column; overflow: auto; height: auto; }
-            #sidebar { width: 100%; max-width: none; height: 400px; }
+            body { flex-direction: column; height: auto; overflow-y: auto; }
+            #sidebar { width: 100%; max-width: none; height: 50vh; }
+            video { max-height: 50vh; }
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
@@ -104,98 +118,136 @@
 <body>
 
     <div id="main-content">
-        <h1>M3U IPTV Player</h1>
-        <video id="video" controls></video>
+        <video id="video" controls autoplay></video>
         
-        <div class="controls">
-            <input type="text" id="m3uUrl" placeholder="Füge hier deinen M3U Playlist Raw Link ein...">
-            <button onclick="loadPlaylist()">Liste laden</button>
+        <div class="controls-bar">
+            <input type="text" id="m3uUrl" placeholder="M3U Playlist URL einfügen...">
+            <button onclick="loadPlaylist()">Laden</button>
+            
+            <select id="qualitySelect" onchange="changeQuality(this.value)">
+                <option value="-1">Auto (Qualität)</option>
+            </select>
         </div>
-        <p style="font-size: 0.8em; color: #aaa;">Hinweis: Manche Links werden vom Anbieter blockiert (CORS).</p>
     </div>
 
     <div id="sidebar">
         <div class="channel-header">Senderliste</div>
-        <div id="channel-list">
-            <div style="padding:10px; color: #888;">Noch keine Liste geladen.</div>
-        </div>
+        <div id="channel-list"></div>
     </div>
 
     <script>
         var hls = null;
+        var video = document.getElementById('video');
 
-        // 1. Funktion: Playlist herunterladen und verarbeiten
+        // Config für bessere Qualität
+        var hlsConfig = {
+            // Versuche, früher höhere Qualität zu laden
+            startLevel: -1, 
+            capLevelToPlayerSize: false, // Nicht durch Playergröße begrenzen
+            maxBufferLength: 30, // Mehr Puffer erlauben (30 Sekunden)
+        };
+
         function loadPlaylist() {
             var url = document.getElementById('m3uUrl').value;
             var listContainer = document.getElementById('channel-list');
-            
-            listContainer.innerHTML = '<div style="padding:10px;">Lade...</div>';
+            listContainer.innerHTML = '<div style="padding:20px;">Lade Liste...</div>';
 
             fetch(url)
-                .then(response => {
-                    if (!response.ok) throw new Error("Netzwerkfehler");
-                    return response.text();
-                })
-                .then(data => {
-                    parseM3U(data);
-                })
-                .catch(error => {
-                    console.error('Fehler:', error);
-                    listContainer.innerHTML = '<div style="padding:10px; color:red;">Fehler beim Laden. Möglicherweise blockiert der Anbieter den Zugriff (CORS) oder der Link ist falsch.</div>';
+                .then(r => r.text())
+                .then(data => parseM3U(data))
+                .catch(e => {
+                    listContainer.innerHTML = '<div style="padding:20px; color:#ff6b6b;">Fehler (CORS blockiert? Link falsch?)</div>';
                 });
         }
 
-        // 2. Funktion: Den Text der M3U Datei in Sender umwandeln
         function parseM3U(data) {
             var lines = data.split('\n');
             var listContainer = document.getElementById('channel-list');
-            listContainer.innerHTML = ''; // Liste leeren
-
-            var currentLogo = "";
+            listContainer.innerHTML = ''; 
             var currentTitle = "";
 
-            for (var i = 0; i < lines.length; i++) {
-                var line = lines[i].trim();
-
+            lines.forEach(line => {
+                line = line.trim();
                 if (line.startsWith('#EXTINF:')) {
-                    // Versuche den Sendernamen zu finden (alles nach dem letzten Komma)
-                    var parts = line.split(',');
-                    currentTitle = parts[parts.length - 1];
+                    currentTitle = line.split(',').pop();
                 } else if (line.startsWith('http')) {
-                    // Das ist der Link zum Stream
-                    createChannelButton(currentTitle, line);
+                    createChannelButton(currentTitle, line, listContainer);
                 }
+            });
+        }
+
+        function createChannelButton(name, url, container) {
+            var btn = document.createElement('button');
+            btn.className = 'channel-btn';
+            btn.innerText = name || "Sender";
+            btn.onclick = function() { 
+                // Markiere aktiven Sender
+                document.querySelectorAll('.channel-btn').forEach(b => b.classList.remove('active-channel'));
+                btn.classList.add('active-channel');
+                playStream(url); 
+            };
+            container.appendChild(btn);
+        }
+
+        function playStream(url) {
+            var qualitySelect = document.getElementById('qualitySelect');
+            qualitySelect.style.display = "none"; // Erstmal verstecken
+
+            if (Hls.isSupported()) {
+                if (hls) hls.destroy();
+                
+                hls = new Hls(hlsConfig);
+                hls.loadSource(url);
+                hls.attachMedia(video);
+                
+                // Sobald die "Manifest"-Daten da sind (wir wissen, welche Qualitäten es gibt)
+                hls.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
+                    video.play();
+                    updateQualityOptions(hls.levels); // Dropdown füllen
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // Safari (keine manuelle Qualität möglich über JS API ohne HLS.js)
+                video.src = url;
+                video.play();
             }
         }
 
-        // 3. Funktion: Button für einen Sender erstellen
-        function createChannelButton(name, url) {
-            var btn = document.createElement('button');
-            btn.className = 'channel-btn';
-            btn.innerText = name || "Unbenannter Sender";
-            btn.onclick = function() { playStream(url); };
-            document.getElementById('channel-list').appendChild(btn);
+        // --- NEUE FUNKTIONEN FÜR QUALITÄT ---
+
+        function updateQualityOptions(levels) {
+            var select = document.getElementById('qualitySelect');
+            select.innerHTML = ""; // Leer machen
+
+            // Wenn es nur 1 Qualität gibt, brauchts kein Menü
+            if (levels.length <= 1) return;
+
+            select.style.display = "block"; // Anzeigen
+
+            // "Auto" Option hinzufügen
+            var autoOption = document.createElement("option");
+            autoOption.value = -1;
+            autoOption.text = "Auto";
+            select.appendChild(autoOption);
+
+            // Alle verfügbaren Levels hinzufügen (z.B. 1080p, 720p)
+            levels.forEach((level, index) => {
+                var option = document.createElement("option");
+                option.value = index;
+                // Text erstellen: "1080p (5000kbps)"
+                var height = level.height ? level.height + "p" : "Level " + index;
+                var bitrate = level.bitrate ? " (" + Math.round(level.bitrate / 1000) + "k)" : "";
+                option.text = height + bitrate;
+                select.appendChild(option);
+            });
+            
+            // Wähle "Auto" als Standard
+            select.value = -1; 
         }
 
-        // 4. Funktion: Den ausgewählten Stream abspielen
-        function playStream(url) {
-            var video = document.getElementById('video');
-
-            if (Hls.isSupported()) {
-                if (hls) {
-                    hls.destroy(); // Alten Stream beenden
-                }
-                hls = new Hls();
-                hls.loadSource(url);
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                    video.play();
-                });
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = url;
-                video.addEventListener('loadedmetadata', function() {
-                    video.play();
-                });
+        function changeQuality(levelIndex) {
+            if (hls) {
+                hls.currentLevel = parseInt(levelIndex);
+                console.log("Qualität geändert auf Level: " + levelIndex);
             }
         }
     </script>
