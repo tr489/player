@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IPTV Player & Fix</title>
+    <title>IPTV Player PC Edition</title>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/clappr@latest/dist/clappr.min.js"></script>
     <style>
-        /* --- DESIGN --- */
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #121212;
@@ -16,228 +16,196 @@
             overflow: hidden;
         }
 
+        /* Linke Seite: Player Bereich */
         #main-content {
-            flex: 3;
+            flex: 1; /* Nimmt den meisten Platz ein */
             display: flex;
             flex-direction: column;
-            padding: 20px;
             background-color: #000;
-            align-items: center;
-            justify-content: center;
             position: relative;
         }
 
+        /* Der Player Container */
+        #player {
+            width: 100%;
+            height: 100%;
+            background: black;
+        }
+
+        /* Rechte Seite: Senderliste */
         #sidebar {
-            flex: 1;
+            width: 350px; /* Feste Breite für die Liste am PC */
             background-color: #1e1e1e;
             border-left: 1px solid #333;
             display: flex;
             flex-direction: column;
-            min-width: 250px;
-            max-width: 400px;
+            z-index: 10;
         }
 
-        video {
-            width: 100%;
-            max-height: 65vh;
-            background-color: black;
-            border-radius: 5px;
-        }
-
-        .controls-bar {
-            width: 100%;
-            display: flex;
-            gap: 10px;
+        /* Eingabebereich oben in der Sidebar */
+        .input-area {
             padding: 15px;
-            background-color: #1e1e1e;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        /* Der Bereich unter dem Video für Fehlermeldungen */
-        #error-area {
-            width: 100%;
-            text-align: center;
-            margin-bottom: 10px;
-            display: none; /* Versteckt bis Video läuft */
-        }
-        
-        .warning-text {
-            color: #ffcc00;
-            font-size: 0.9rem;
-            margin-bottom: 10px;
-        }
-
-        /* Buttons für externe Lösungen */
-        .external-controls {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
+            background-color: #252525;
+            border-bottom: 1px solid #333;
         }
 
         input {
-            flex-grow: 1;
+            width: 100%;
             padding: 10px;
+            box-sizing: border-box; /* Verhindert, dass Padding die Breite sprengt */
             background-color: #333;
             border: 1px solid #444;
             color: white;
             border-radius: 4px;
+            margin-bottom: 10px;
         }
 
-        button {
-            padding: 10px 15px;
+        button.load-btn {
+            width: 100%;
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
-            color: white;
         }
+        button.load-btn:hover { background-color: #0056b3; }
 
-        .btn-load { background-color: #007bff; }
-        .btn-load:hover { background-color: #0056b3; }
-
-        .btn-external { background-color: #28a745; } /* Grün */
-        .btn-copy { background-color: #6c757d; } /* Grau */
-
+        /* Die Liste selbst */
         #channel-list {
             flex-grow: 1;
             overflow-y: auto;
         }
+
         .channel-btn {
             width: 100%;
-            padding: 12px 15px;
+            padding: 12px 20px;
             background: none;
             border: none;
             border-bottom: 1px solid #2a2a2a;
             color: #ccc;
             text-align: left;
             cursor: pointer;
+            font-size: 14px;
+            transition: 0.2s;
         }
-        .channel-btn:hover { background-color: #333; color: white; }
-        .active-channel { background-color: #007bff !important; color: white; }
+        
+        .channel-btn:hover { background-color: #333; color: white; padding-left: 25px; }
+        .active-channel { background-color: #007bff !important; color: white; border-left: 4px solid white; }
 
-        @media (max-width: 768px) {
-            body { flex-direction: column; height: auto; overflow-y: auto; }
-            #sidebar { width: 100%; max-width: none; height: 50vh; }
-            video { max-height: 40vh; }
-        }
+        /* Scrollbar schön machen (nur Webkit/Chrome/Edge) */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e1e1e; }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
 
     <div id="main-content">
-        <video id="video" controls autoplay></video>
-        
-        <div id="error-area">
-            <div class="warning-text">Kein Ton? Browser können oft kein AC3/Dolby abspielen.</div>
-            <div class="external-controls">
-                <button class="btn-external" onclick="openIdeally()">
-                    📲 In externer App öffnen
-                </button>
-                <button class="btn-copy" onclick="copyLink()">
-                    📋 Link kopieren
-                </button>
-            </div>
-        </div>
-
-        <div class="controls-bar">
-            <input type="text" id="m3uUrl" placeholder="M3U Playlist URL einfügen...">
-            <button class="btn-load" onclick="loadPlaylist()">Liste Laden</button>
-        </div>
+        <div id="player"></div>
     </div>
 
     <div id="sidebar">
-        <div style="padding:15px; font-weight:bold; background:#252525;">Senderliste</div>
+        <div class="input-area">
+            <h3 style="margin: 0 0 10px 0; font-size: 1.2rem;">Senderliste</h3>
+            <input type="text" id="m3uUrl" placeholder="M3U Playlist URL einfügen...">
+            <button class="load-btn" onclick="loadPlaylist()">Liste laden</button>
+            <div style="margin-top:10px; font-size: 0.75rem; color: #888;">
+                Tipp: Nutze MS Edge falls Audio fehlt.
+            </div>
+        </div>
         <div id="channel-list"></div>
     </div>
 
     <script>
-        var hls = null;
-        var video = document.getElementById('video');
-        var currentStreamUrl = ""; // Hier wird IMMER der aktuelle Link gespeichert
+        var playerInstance = null;
+
+        // Startet den Player beim ersten Laden leer (Schwarzer Screen)
+        window.onload = function() {
+            createPlayer("http://clappr.io/highline.mp4", false); // Dummy URL, autoplay aus
+        }
+
+        function createPlayer(url, autoPlay) {
+            // Wenn schon ein Player da ist, zerstören wir ihn sauber
+            if (playerInstance) {
+                playerInstance.destroy();
+            }
+
+            playerInstance = new Clappr.Player({
+                source: url,
+                parentId: "#player",
+                width: '100%',
+                height: '100%',
+                autoPlay: autoPlay,
+                // Plugins und Config für bessere Performance
+                hlsjsConfig: {
+                    enableWorker: true, // Nutzt mehr CPU-Kerne (gut für PC)
+                    maxBufferLength: 60, // 60 Sekunden Puffer
+                },
+                events: {
+                    onError: function(e) {
+                        console.log("Fehler:", e);
+                    }
+                }
+            });
+        }
 
         function loadPlaylist() {
             var url = document.getElementById('m3uUrl').value;
-            var listContainer = document.getElementById('channel-list');
-            listContainer.innerHTML = '<div style="padding:20px;">Lade...</div>';
+            var list = document.getElementById('channel-list');
+            
+            if(!url) { alert("Bitte URL eingeben"); return; }
+            
+            list.innerHTML = '<div style="padding:20px;">Lade Liste...</div>';
 
-            fetch(url).then(r => r.text()).then(parseM3U).catch(e => {
-                listContainer.innerHTML = '<div style="padding:20px; color:red;">Fehler beim Laden.</div>';
-            });
+            fetch(url)
+                .then(r => r.text())
+                .then(data => parseM3U(data))
+                .catch(e => {
+                    list.innerHTML = '<div style="padding:20px; color:red;">Fehler beim Laden. CORS Blockade?</div>';
+                });
         }
 
         function parseM3U(data) {
             var lines = data.split('\n');
             var list = document.getElementById('channel-list');
-            list.innerHTML = '';
-            var title = "";
+            list.innerHTML = ''; // Liste leeren
             
+            var title = "";
+            var channelCount = 0;
+
             lines.forEach(line => {
                 line = line.trim();
                 if (line.startsWith('#EXTINF:')) {
+                    // Titel extrahieren
                     title = line.split(',').pop();
                 } else if (line.startsWith('http')) {
+                    // Button erstellen
                     createBtn(title, line, list);
+                    channelCount++;
                 }
             });
+
+            if (channelCount === 0) {
+                list.innerHTML = '<div style="padding:20px; color:orange;">Keine Sender gefunden. Format falsch?</div>';
+            }
         }
 
         function createBtn(name, url, container) {
             var btn = document.createElement('button');
             btn.className = 'channel-btn';
-            btn.innerText = name;
-            btn.onclick = () => {
-                // Aktiven Kanal markieren
+            btn.innerText = name || "Unbenannter Sender";
+            btn.onclick = function() {
+                // Aktiven Kanal optisch markieren
                 document.querySelectorAll('.channel-btn').forEach(b => b.classList.remove('active-channel'));
                 btn.classList.add('active-channel');
                 
-                // Stream abspielen
-                playStream(url);
+                // Stream im Player starten
+                createPlayer(url, true);
             };
             container.appendChild(btn);
-        }
-
-        function playStream(url) {
-            currentStreamUrl = url; // WICHTIG: URL speichern für die Buttons unten
-            document.getElementById('error-area').style.display = "block"; // Hilfe-Buttons anzeigen
-
-            if (Hls.isSupported()) {
-                if (hls) hls.destroy();
-                hls = new Hls();
-                hls.loadSource(url);
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = url;
-                video.play();
-            }
-        }
-
-        // --- NEUE FUNKTIONEN ---
-
-        // 1. Versucht, die App System-seitig zu öffnen (Besser für Android)
-        function openIdeally() {
-            if (!currentStreamUrl) {
-                alert("Wähle erst einen Sender aus.");
-                return;
-            }
-            // Öffnet den Link in neuem Tab.
-            // Android erkennt .m3u8 und fragt: "Öffnen mit VLC / Player?"
-            window.open(currentStreamUrl, '_blank');
-        }
-
-        // 2. Kopiert den Link (Für PC Nutzer oder manuelles Einfügen)
-        function copyLink() {
-            if (!currentStreamUrl) {
-                alert("Wähle erst einen Sender aus.");
-                return;
-            }
-            navigator.clipboard.writeText(currentStreamUrl).then(() => {
-                alert("Link kopiert! Öffne VLC -> Medien -> Netzwerkstream und drücke Einfügen.");
-            }).catch(err => {
-                alert("Konnte nicht kopieren. Browser blockiert es.");
-            });
         }
     </script>
 </body>
