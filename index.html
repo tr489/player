@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ultimate IPTV Player</title>
+    <title>IPTV Player & Bridge</title>
     <style>
         /* --- DESIGN --- */
         body {
@@ -38,19 +38,28 @@
 
         video {
             width: 100%;
-            max-height: 80vh;
+            max-height: 70vh;
             background-color: black;
             outline: none;
+            border-radius: 5px;
         }
 
         .controls-bar {
             width: 100%;
             display: flex;
             gap: 10px;
-            padding: 10px;
+            padding: 15px;
             background-color: #1e1e1e;
             align-items: center;
-            flex-wrap: wrap; /* Damit es auf Handy umbricht */
+            flex-wrap: wrap;
+        }
+
+        /* Status Meldung unter dem Video */
+        #status-msg {
+            margin-top: 10px;
+            color: #ff9800;
+            font-size: 0.9em;
+            display: none;
         }
 
         input {
@@ -60,36 +69,38 @@
             border: 1px solid #444;
             color: white;
             border-radius: 4px;
-            min-width: 150px;
         }
 
-        /* Die Dropdowns für Qualität und Audio */
-        select {
+        select, .action-btn {
             padding: 10px;
             background-color: #333;
             border: 1px solid #444;
             color: white;
             border-radius: 4px;
-            display: none; 
-            max-width: 150px;
+            cursor: pointer;
         }
 
-        button {
-            padding: 10px 20px;
+        .primary-btn {
             background-color: #007bff;
-            color: white;
             border: none;
-            border-radius: 4px;
-            cursor: pointer;
             font-weight: bold;
         }
-        button:hover { background-color: #0056b3; }
+        .primary-btn:hover { background-color: #0056b3; }
+
+        /* Der VLC Button - sticht hervor */
+        .vlc-btn {
+            background-color: #ff5722; 
+            border: none;
+            color: white;
+            display: none; /* Erst unsichtbar */
+            font-weight: bold;
+        }
+        .vlc-btn:hover { background-color: #e64a19; }
 
         #channel-list {
             flex-grow: 1;
             overflow-y: auto;
         }
-        .channel-header { padding: 15px; font-size: 1.1em; font-weight: bold; border-bottom: 1px solid #333; background-color: #252525; }
         .channel-btn {
             width: 100%;
             padding: 12px 15px;
@@ -116,145 +127,113 @@
     <div id="main-content">
         <video id="video" controls autoplay></video>
         
+        <div id="status-msg">
+            Kein Ton? Dieser Sender nutzt wahrscheinlich AC3-Audio (Dolby). Browser blockieren das. 
+            Nutze den orangenen Button unten!
+        </div>
+
         <div class="controls-bar">
-            <input type="text" id="m3uUrl" placeholder="M3U Playlist URL einfügen...">
-            <button onclick="loadPlaylist()">Laden</button>
+            <input type="text" id="m3uUrl" placeholder="M3U Playlist URL...">
+            <button class="action-btn primary-btn" onclick="loadPlaylist()">Liste Laden</button>
             
-            <select id="qualitySelect" onchange="changeQuality(this.value)"></select>
+            <select id="qualitySelect" onchange="changeQuality(this.value)" style="display:none;"></select>
             
-            <select id="audioSelect" onchange="changeAudio(this.value)"></select>
+            <button id="vlcBtn" class="action-btn vlc-btn" onclick="openExternal()">
+                ⚠️ In VLC öffnen (Fix Audio)
+            </button>
         </div>
     </div>
 
     <div id="sidebar">
-        <div class="channel-header">Senderliste</div>
+        <div style="padding:15px; font-weight:bold; background:#252525;">Senderliste</div>
         <div id="channel-list"></div>
     </div>
 
     <script>
         var hls = null;
         var video = document.getElementById('video');
-
-        var hlsConfig = {
-            startLevel: -1, 
-            capLevelToPlayerSize: false,
-            maxBufferLength: 30,
-        };
+        var currentStreamUrl = ""; // Speichert die aktuelle URL für den VLC Button
 
         function loadPlaylist() {
             var url = document.getElementById('m3uUrl').value;
-            var listContainer = document.getElementById('channel-list');
-            listContainer.innerHTML = '<div style="padding:20px;">Lade Liste...</div>';
-
-            fetch(url).then(r => r.text()).then(data => parseM3U(data))
-                .catch(e => { listContainer.innerHTML = '<div style="padding:20px; color:red;">Fehler beim Laden!</div>'; });
+            fetch(url).then(r => r.text()).then(parseM3U).catch(e => alert("Fehler beim Laden!"));
         }
 
         function parseM3U(data) {
             var lines = data.split('\n');
-            var listContainer = document.getElementById('channel-list');
-            listContainer.innerHTML = ''; 
-            var currentTitle = "";
+            var list = document.getElementById('channel-list');
+            list.innerHTML = '';
+            var title = "";
             lines.forEach(line => {
                 line = line.trim();
-                if (line.startsWith('#EXTINF:')) currentTitle = line.split(',').pop();
-                else if (line.startsWith('http')) createChannelButton(currentTitle, line, listContainer);
+                if (line.startsWith('#EXTINF:')) title = line.split(',').pop();
+                else if (line.startsWith('http')) createBtn(title, line, list);
             });
         }
 
-        function createChannelButton(name, url, container) {
+        function createBtn(name, url, container) {
             var btn = document.createElement('button');
             btn.className = 'channel-btn';
-            btn.innerText = name || "Sender";
-            btn.onclick = function() { 
+            btn.innerText = name;
+            btn.onclick = () => {
                 document.querySelectorAll('.channel-btn').forEach(b => b.classList.remove('active-channel'));
                 btn.classList.add('active-channel');
-                playStream(url); 
+                playStream(url);
             };
             container.appendChild(btn);
         }
 
         function playStream(url) {
-            // Dropdowns erst verstecken
+            currentStreamUrl = url;
+            document.getElementById('status-msg').style.display = "block"; // Hinweis anzeigen
+            document.getElementById('vlcBtn').style.display = "block"; // VLC Button anzeigen
             document.getElementById('qualitySelect').style.display = "none";
-            document.getElementById('audioSelect').style.display = "none";
 
             if (Hls.isSupported()) {
                 if (hls) hls.destroy();
-                hls = new Hls(hlsConfig);
+                hls = new Hls();
                 hls.loadSource(url);
                 hls.attachMedia(video);
-                
-                hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
                     video.play();
-                    updateQualityOptions(hls.levels);
-                    updateAudioOptions(hls.audioTracks); // Audio Spuren laden
+                    updateQuality(hls.levels);
                 });
-
-                // Auch beim Umschalten der Qualität prüfen, ob sich Audio ändert
-                hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, function () {
-                   updateAudioOptions(hls.audioTracks);
-                });
-
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                 video.src = url;
                 video.play();
             }
         }
 
-        function updateQualityOptions(levels) {
-            var select = document.getElementById('qualitySelect');
-            select.innerHTML = "";
-            if (!levels || levels.length <= 1) return;
-            select.style.display = "block";
-
-            var autoOption = document.createElement("option");
-            autoOption.value = -1; autoOption.text = "Auto Qualität";
-            select.appendChild(autoOption);
-
-            levels.forEach((level, index) => {
-                var option = document.createElement("option");
-                option.value = index;
-                option.text = (level.height ? level.height + "p" : "Level " + index);
-                select.appendChild(option);
-            });
-            select.value = -1; 
-        }
-
-        function changeQuality(levelIndex) {
-            if (hls) hls.currentLevel = parseInt(levelIndex);
-        }
-
-        // --- NEUE AUDIO FUNKTIONEN ---
-
-        function updateAudioOptions(tracks) {
-            var select = document.getElementById('audioSelect');
-            select.innerHTML = "";
-            
-            // Wenn keine oder nur 1 Spur da ist, Button verstecken
-            if (!tracks || tracks.length <= 1) return;
-
-            select.style.display = "block";
-
-            tracks.forEach((track, index) => {
-                var option = document.createElement("option");
-                option.value = index;
-                // Zeige Namen der Spur an (z.B. "Deutsch", "Englisch" oder Codec "mp4a")
-                option.text = track.name || track.lang || ("Audio " + (index + 1));
-                select.appendChild(option);
-            });
-            
-            // Aktuelle Spur setzen
-            select.value = hls.audioTrack;
-        }
-
-        function changeAudio(trackIndex) {
-            if (hls) {
-                hls.audioTrack = parseInt(trackIndex);
-                console.log("Audio geändert auf Spur: " + trackIndex);
+        function updateQuality(levels) {
+            var sel = document.getElementById('qualitySelect');
+            sel.innerHTML = "";
+            if(levels.length > 1) {
+                sel.style.display = "block";
+                levels.forEach((l, i) => {
+                    var opt = document.createElement("option");
+                    opt.value = i;
+                    opt.text = l.height + "p";
+                    sel.appendChild(opt);
+                });
+                sel.value = -1; // Auto
             }
         }
-    </script>
 
+        function changeQuality(val) { if(hls) hls.currentLevel = parseInt(val); }
+
+        // --- DER NOTFALL TRICK ---
+        function openExternal() {
+            if (!currentStreamUrl) return;
+            
+            // Versuch 1: VLC Protokoll (Funktioniert oft auf PC/Mac wenn VLC installiert ist)
+            // Wir erstellen einen unsichtbaren Link und klicken ihn
+            window.location.href = "vlc://" + currentStreamUrl;
+            
+            // Hinweis: Auf Android funktioniert oft auch einfach der rohe Link,
+            // da Android fragt "Mit welcher App öffnen?"
+            // Falls vlc:// nicht geht, könnte man probieren:
+            // window.open(currentStreamUrl, '_blank');
+        }
+    </script>
 </body>
 </html>
