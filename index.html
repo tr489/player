@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>High Quality IPTV Player</title>
+    <title>Ultimate IPTV Player</title>
     <style>
-        /* --- DESIGN (CSS) --- */
+        /* --- DESIGN --- */
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #121212;
@@ -16,7 +16,6 @@
             overflow: hidden;
         }
 
-        /* Linker Bereich: Player */
         #main-content {
             flex: 3;
             display: flex;
@@ -25,10 +24,8 @@
             background-color: #000;
             align-items: center;
             justify-content: center;
-            position: relative;
         }
 
-        /* Rechter Bereich: Senderliste */
         #sidebar {
             flex: 1;
             background-color: #1e1e1e;
@@ -39,7 +36,6 @@
             max-width: 400px;
         }
 
-        /* Video Styles */
         video {
             width: 100%;
             max-height: 80vh;
@@ -47,7 +43,6 @@
             outline: none;
         }
 
-        /* Kontrollleiste unten */
         .controls-bar {
             width: 100%;
             display: flex;
@@ -55,6 +50,7 @@
             padding: 10px;
             background-color: #1e1e1e;
             align-items: center;
+            flex-wrap: wrap; /* Damit es auf Handy umbricht */
         }
 
         input {
@@ -64,15 +60,18 @@
             border: 1px solid #444;
             color: white;
             border-radius: 4px;
+            min-width: 150px;
         }
 
+        /* Die Dropdowns für Qualität und Audio */
         select {
             padding: 10px;
             background-color: #333;
             border: 1px solid #444;
             color: white;
             border-radius: 4px;
-            display: none; /* Erst anzeigen, wenn Video läuft */
+            display: none; 
+            max-width: 150px;
         }
 
         button {
@@ -86,7 +85,6 @@
         }
         button:hover { background-color: #0056b3; }
 
-        /* Senderliste Styles */
         #channel-list {
             flex-grow: 1;
             overflow-y: auto;
@@ -101,12 +99,10 @@
             color: #ccc;
             text-align: left;
             cursor: pointer;
-            transition: background 0.2s;
         }
         .channel-btn:hover { background-color: #333; color: white; }
         .active-channel { background-color: #007bff !important; color: white; }
 
-        /* Mobile */
         @media (max-width: 768px) {
             body { flex-direction: column; height: auto; overflow-y: auto; }
             #sidebar { width: 100%; max-width: none; height: 50vh; }
@@ -124,9 +120,9 @@
             <input type="text" id="m3uUrl" placeholder="M3U Playlist URL einfügen...">
             <button onclick="loadPlaylist()">Laden</button>
             
-            <select id="qualitySelect" onchange="changeQuality(this.value)">
-                <option value="-1">Auto (Qualität)</option>
-            </select>
+            <select id="qualitySelect" onchange="changeQuality(this.value)"></select>
+            
+            <select id="audioSelect" onchange="changeAudio(this.value)"></select>
         </div>
     </div>
 
@@ -139,12 +135,10 @@
         var hls = null;
         var video = document.getElementById('video');
 
-        // Config für bessere Qualität
         var hlsConfig = {
-            // Versuche, früher höhere Qualität zu laden
             startLevel: -1, 
-            capLevelToPlayerSize: false, // Nicht durch Playergröße begrenzen
-            maxBufferLength: 30, // Mehr Puffer erlauben (30 Sekunden)
+            capLevelToPlayerSize: false,
+            maxBufferLength: 30,
         };
 
         function loadPlaylist() {
@@ -152,12 +146,8 @@
             var listContainer = document.getElementById('channel-list');
             listContainer.innerHTML = '<div style="padding:20px;">Lade Liste...</div>';
 
-            fetch(url)
-                .then(r => r.text())
-                .then(data => parseM3U(data))
-                .catch(e => {
-                    listContainer.innerHTML = '<div style="padding:20px; color:#ff6b6b;">Fehler (CORS blockiert? Link falsch?)</div>';
-                });
+            fetch(url).then(r => r.text()).then(data => parseM3U(data))
+                .catch(e => { listContainer.innerHTML = '<div style="padding:20px; color:red;">Fehler beim Laden!</div>'; });
         }
 
         function parseM3U(data) {
@@ -165,14 +155,10 @@
             var listContainer = document.getElementById('channel-list');
             listContainer.innerHTML = ''; 
             var currentTitle = "";
-
             lines.forEach(line => {
                 line = line.trim();
-                if (line.startsWith('#EXTINF:')) {
-                    currentTitle = line.split(',').pop();
-                } else if (line.startsWith('http')) {
-                    createChannelButton(currentTitle, line, listContainer);
-                }
+                if (line.startsWith('#EXTINF:')) currentTitle = line.split(',').pop();
+                else if (line.startsWith('http')) createChannelButton(currentTitle, line, listContainer);
             });
         }
 
@@ -181,7 +167,6 @@
             btn.className = 'channel-btn';
             btn.innerText = name || "Sender";
             btn.onclick = function() { 
-                // Markiere aktiven Sender
                 document.querySelectorAll('.channel-btn').forEach(b => b.classList.remove('active-channel'));
                 btn.classList.add('active-channel');
                 playStream(url); 
@@ -190,64 +175,83 @@
         }
 
         function playStream(url) {
-            var qualitySelect = document.getElementById('qualitySelect');
-            qualitySelect.style.display = "none"; // Erstmal verstecken
+            // Dropdowns erst verstecken
+            document.getElementById('qualitySelect').style.display = "none";
+            document.getElementById('audioSelect').style.display = "none";
 
             if (Hls.isSupported()) {
                 if (hls) hls.destroy();
-                
                 hls = new Hls(hlsConfig);
                 hls.loadSource(url);
                 hls.attachMedia(video);
                 
-                // Sobald die "Manifest"-Daten da sind (wir wissen, welche Qualitäten es gibt)
-                hls.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
+                hls.on(Hls.Events.MANIFEST_PARSED, function () {
                     video.play();
-                    updateQualityOptions(hls.levels); // Dropdown füllen
+                    updateQualityOptions(hls.levels);
+                    updateAudioOptions(hls.audioTracks); // Audio Spuren laden
                 });
+
+                // Auch beim Umschalten der Qualität prüfen, ob sich Audio ändert
+                hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, function () {
+                   updateAudioOptions(hls.audioTracks);
+                });
+
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                // Safari (keine manuelle Qualität möglich über JS API ohne HLS.js)
                 video.src = url;
                 video.play();
             }
         }
 
-        // --- NEUE FUNKTIONEN FÜR QUALITÄT ---
-
         function updateQualityOptions(levels) {
             var select = document.getElementById('qualitySelect');
-            select.innerHTML = ""; // Leer machen
+            select.innerHTML = "";
+            if (!levels || levels.length <= 1) return;
+            select.style.display = "block";
 
-            // Wenn es nur 1 Qualität gibt, brauchts kein Menü
-            if (levels.length <= 1) return;
-
-            select.style.display = "block"; // Anzeigen
-
-            // "Auto" Option hinzufügen
             var autoOption = document.createElement("option");
-            autoOption.value = -1;
-            autoOption.text = "Auto";
+            autoOption.value = -1; autoOption.text = "Auto Qualität";
             select.appendChild(autoOption);
 
-            // Alle verfügbaren Levels hinzufügen (z.B. 1080p, 720p)
             levels.forEach((level, index) => {
                 var option = document.createElement("option");
                 option.value = index;
-                // Text erstellen: "1080p (5000kbps)"
-                var height = level.height ? level.height + "p" : "Level " + index;
-                var bitrate = level.bitrate ? " (" + Math.round(level.bitrate / 1000) + "k)" : "";
-                option.text = height + bitrate;
+                option.text = (level.height ? level.height + "p" : "Level " + index);
                 select.appendChild(option);
             });
-            
-            // Wähle "Auto" als Standard
             select.value = -1; 
         }
 
         function changeQuality(levelIndex) {
+            if (hls) hls.currentLevel = parseInt(levelIndex);
+        }
+
+        // --- NEUE AUDIO FUNKTIONEN ---
+
+        function updateAudioOptions(tracks) {
+            var select = document.getElementById('audioSelect');
+            select.innerHTML = "";
+            
+            // Wenn keine oder nur 1 Spur da ist, Button verstecken
+            if (!tracks || tracks.length <= 1) return;
+
+            select.style.display = "block";
+
+            tracks.forEach((track, index) => {
+                var option = document.createElement("option");
+                option.value = index;
+                // Zeige Namen der Spur an (z.B. "Deutsch", "Englisch" oder Codec "mp4a")
+                option.text = track.name || track.lang || ("Audio " + (index + 1));
+                select.appendChild(option);
+            });
+            
+            // Aktuelle Spur setzen
+            select.value = hls.audioTrack;
+        }
+
+        function changeAudio(trackIndex) {
             if (hls) {
-                hls.currentLevel = parseInt(levelIndex);
-                console.log("Qualität geändert auf Level: " + levelIndex);
+                hls.audioTrack = parseInt(trackIndex);
+                console.log("Audio geändert auf Spur: " + trackIndex);
             }
         }
     </script>
