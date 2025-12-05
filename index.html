@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IPTV Player & Bridge</title>
+    <title>IPTV Player & Fix</title>
     <style>
         /* --- DESIGN --- */
         body {
@@ -24,6 +24,7 @@
             background-color: #000;
             align-items: center;
             justify-content: center;
+            position: relative;
         }
 
         #sidebar {
@@ -38,9 +39,8 @@
 
         video {
             width: 100%;
-            max-height: 70vh;
+            max-height: 65vh;
             background-color: black;
-            outline: none;
             border-radius: 5px;
         }
 
@@ -54,12 +54,25 @@
             flex-wrap: wrap;
         }
 
-        /* Status Meldung unter dem Video */
-        #status-msg {
-            margin-top: 10px;
-            color: #ff9800;
-            font-size: 0.9em;
-            display: none;
+        /* Der Bereich unter dem Video für Fehlermeldungen */
+        #error-area {
+            width: 100%;
+            text-align: center;
+            margin-bottom: 10px;
+            display: none; /* Versteckt bis Video läuft */
+        }
+        
+        .warning-text {
+            color: #ffcc00;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+
+        /* Buttons für externe Lösungen */
+        .external-controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
         }
 
         input {
@@ -71,31 +84,20 @@
             border-radius: 4px;
         }
 
-        select, .action-btn {
-            padding: 10px;
-            background-color: #333;
-            border: 1px solid #444;
-            color: white;
+        button {
+            padding: 10px 15px;
+            border: none;
             border-radius: 4px;
             cursor: pointer;
-        }
-
-        .primary-btn {
-            background-color: #007bff;
-            border: none;
             font-weight: bold;
-        }
-        .primary-btn:hover { background-color: #0056b3; }
-
-        /* Der VLC Button - sticht hervor */
-        .vlc-btn {
-            background-color: #ff5722; 
-            border: none;
             color: white;
-            display: none; /* Erst unsichtbar */
-            font-weight: bold;
         }
-        .vlc-btn:hover { background-color: #e64a19; }
+
+        .btn-load { background-color: #007bff; }
+        .btn-load:hover { background-color: #0056b3; }
+
+        .btn-external { background-color: #28a745; } /* Grün */
+        .btn-copy { background-color: #6c757d; } /* Grau */
 
         #channel-list {
             flex-grow: 1;
@@ -117,7 +119,7 @@
         @media (max-width: 768px) {
             body { flex-direction: column; height: auto; overflow-y: auto; }
             #sidebar { width: 100%; max-width: none; height: 50vh; }
-            video { max-height: 50vh; }
+            video { max-height: 40vh; }
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
@@ -127,20 +129,21 @@
     <div id="main-content">
         <video id="video" controls autoplay></video>
         
-        <div id="status-msg">
-            Kein Ton? Dieser Sender nutzt wahrscheinlich AC3-Audio (Dolby). Browser blockieren das. 
-            Nutze den orangenen Button unten!
+        <div id="error-area">
+            <div class="warning-text">Kein Ton? Browser können oft kein AC3/Dolby abspielen.</div>
+            <div class="external-controls">
+                <button class="btn-external" onclick="openIdeally()">
+                    📲 In externer App öffnen
+                </button>
+                <button class="btn-copy" onclick="copyLink()">
+                    📋 Link kopieren
+                </button>
+            </div>
         </div>
 
         <div class="controls-bar">
-            <input type="text" id="m3uUrl" placeholder="M3U Playlist URL...">
-            <button class="action-btn primary-btn" onclick="loadPlaylist()">Liste Laden</button>
-            
-            <select id="qualitySelect" onchange="changeQuality(this.value)" style="display:none;"></select>
-            
-            <button id="vlcBtn" class="action-btn vlc-btn" onclick="openExternal()">
-                ⚠️ In VLC öffnen (Fix Audio)
-            </button>
+            <input type="text" id="m3uUrl" placeholder="M3U Playlist URL einfügen...">
+            <button class="btn-load" onclick="loadPlaylist()">Liste Laden</button>
         </div>
     </div>
 
@@ -152,11 +155,16 @@
     <script>
         var hls = null;
         var video = document.getElementById('video');
-        var currentStreamUrl = ""; // Speichert die aktuelle URL für den VLC Button
+        var currentStreamUrl = ""; // Hier wird IMMER der aktuelle Link gespeichert
 
         function loadPlaylist() {
             var url = document.getElementById('m3uUrl').value;
-            fetch(url).then(r => r.text()).then(parseM3U).catch(e => alert("Fehler beim Laden!"));
+            var listContainer = document.getElementById('channel-list');
+            listContainer.innerHTML = '<div style="padding:20px;">Lade...</div>';
+
+            fetch(url).then(r => r.text()).then(parseM3U).catch(e => {
+                listContainer.innerHTML = '<div style="padding:20px; color:red;">Fehler beim Laden.</div>';
+            });
         }
 
         function parseM3U(data) {
@@ -164,10 +172,14 @@
             var list = document.getElementById('channel-list');
             list.innerHTML = '';
             var title = "";
+            
             lines.forEach(line => {
                 line = line.trim();
-                if (line.startsWith('#EXTINF:')) title = line.split(',').pop();
-                else if (line.startsWith('http')) createBtn(title, line, list);
+                if (line.startsWith('#EXTINF:')) {
+                    title = line.split(',').pop();
+                } else if (line.startsWith('http')) {
+                    createBtn(title, line, list);
+                }
             });
         }
 
@@ -176,63 +188,56 @@
             btn.className = 'channel-btn';
             btn.innerText = name;
             btn.onclick = () => {
+                // Aktiven Kanal markieren
                 document.querySelectorAll('.channel-btn').forEach(b => b.classList.remove('active-channel'));
                 btn.classList.add('active-channel');
+                
+                // Stream abspielen
                 playStream(url);
             };
             container.appendChild(btn);
         }
 
         function playStream(url) {
-            currentStreamUrl = url;
-            document.getElementById('status-msg').style.display = "block"; // Hinweis anzeigen
-            document.getElementById('vlcBtn').style.display = "block"; // VLC Button anzeigen
-            document.getElementById('qualitySelect').style.display = "none";
+            currentStreamUrl = url; // WICHTIG: URL speichern für die Buttons unten
+            document.getElementById('error-area').style.display = "block"; // Hilfe-Buttons anzeigen
 
             if (Hls.isSupported()) {
                 if (hls) hls.destroy();
                 hls = new Hls();
                 hls.loadSource(url);
                 hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    video.play();
-                    updateQuality(hls.levels);
-                });
+                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                 video.src = url;
                 video.play();
             }
         }
 
-        function updateQuality(levels) {
-            var sel = document.getElementById('qualitySelect');
-            sel.innerHTML = "";
-            if(levels.length > 1) {
-                sel.style.display = "block";
-                levels.forEach((l, i) => {
-                    var opt = document.createElement("option");
-                    opt.value = i;
-                    opt.text = l.height + "p";
-                    sel.appendChild(opt);
-                });
-                sel.value = -1; // Auto
+        // --- NEUE FUNKTIONEN ---
+
+        // 1. Versucht, die App System-seitig zu öffnen (Besser für Android)
+        function openIdeally() {
+            if (!currentStreamUrl) {
+                alert("Wähle erst einen Sender aus.");
+                return;
             }
+            // Öffnet den Link in neuem Tab.
+            // Android erkennt .m3u8 und fragt: "Öffnen mit VLC / Player?"
+            window.open(currentStreamUrl, '_blank');
         }
 
-        function changeQuality(val) { if(hls) hls.currentLevel = parseInt(val); }
-
-        // --- DER NOTFALL TRICK ---
-        function openExternal() {
-            if (!currentStreamUrl) return;
-            
-            // Versuch 1: VLC Protokoll (Funktioniert oft auf PC/Mac wenn VLC installiert ist)
-            // Wir erstellen einen unsichtbaren Link und klicken ihn
-            window.location.href = "vlc://" + currentStreamUrl;
-            
-            // Hinweis: Auf Android funktioniert oft auch einfach der rohe Link,
-            // da Android fragt "Mit welcher App öffnen?"
-            // Falls vlc:// nicht geht, könnte man probieren:
-            // window.open(currentStreamUrl, '_blank');
+        // 2. Kopiert den Link (Für PC Nutzer oder manuelles Einfügen)
+        function copyLink() {
+            if (!currentStreamUrl) {
+                alert("Wähle erst einen Sender aus.");
+                return;
+            }
+            navigator.clipboard.writeText(currentStreamUrl).then(() => {
+                alert("Link kopiert! Öffne VLC -> Medien -> Netzwerkstream und drücke Einfügen.");
+            }).catch(err => {
+                alert("Konnte nicht kopieren. Browser blockiert es.");
+            });
         }
     </script>
 </body>
